@@ -1,0 +1,10 @@
+{
+  "name": "claude-session-driver",
+  "source": {
+    "source": "local",
+    "path": "."
+  },
+  "description": "Launch, control, and monitor other Claude Code sessions as workers via tmux",
+  "version": "1.0.0",
+  "strict": true
+}
