@@ -1,18 +1,16 @@
 # claude-session-driver
 
-A Claude Code plugin for launching, controlling, and monitoring other Claude Code sessions as workers via tmux.
+A Claude Code plugin that gives Claude the ability to spawn, orchestrate, and supervise other Claude Code sessions.
 
-## What It Does
+## Why
 
-Spawn worker Claude Code sessions in tmux, send them prompts, monitor their lifecycle through events, read their output, approve or deny tool calls, and hand off to human operators.
+A single Claude session can only do one thing at a time. This plugin lets a "controller" Claude launch "worker" Claude sessions in tmux, send them tasks, monitor their progress, review and approve their tool calls, and read their results. The controller can delegate work, fan out across parallel workers, chain workers in pipelines, or hand a running session off to a human.
 
-Workers are full Claude Code sessions with a plugin that emits lifecycle events (session start, prompt submitted, tool use, stop, session end) to a JSONL file. A PreToolUse hook gives the controller a window to inspect and approve/deny every tool call.
+## How It Works
 
-## Prerequisites
+The plugin installs hooks into each worker session that emit lifecycle events (session start, prompt submitted, tool use, stop, session end) to a JSONL file. A PreToolUse hook gives the controller a window to inspect and approve or deny every tool call before it executes — auto-approving after a configurable timeout so workers never hang.
 
-- **tmux** - for running worker sessions
-- **jq** - for JSON parsing
-- **claude** CLI - Claude Code
+The controller drives workers through shell scripts that handle tmux management, event polling, session logs, and cleanup.
 
 ## Installation
 
@@ -20,39 +18,34 @@ Workers are full Claude Code sessions with a plugin that emits lifecycle events 
 claude /install claude-session-driver@superpowers-marketplace
 ```
 
-## Quick Start
+Requires **tmux**, **jq**, and the **claude** CLI.
 
-```bash
-SCRIPTS="/path/to/claude-session-driver/scripts"
+## Usage
 
-# Launch a worker
-RESULT=$("$SCRIPTS/launch-worker.sh" my-worker ~/project)
-SESSION_ID=$(echo "$RESULT" | jq -r '.session_id')
+Once installed, the `driving-claude-code-sessions` skill teaches Claude how to use the plugin. The skill covers:
 
-# Send a prompt and get the response
-RESPONSE=$("$SCRIPTS/converse.sh" my-worker "$SESSION_ID" "Run the tests" 300)
-echo "$RESPONSE"
-
-# Stop the worker
-"$SCRIPTS/stop-worker.sh" my-worker "$SESSION_ID"
-```
+- Launching and stopping workers
+- Single-turn and multi-turn conversations
+- Fan-out parallelism (multiple workers on independent tasks)
+- Pipelines (chaining workers where one's output feeds the next)
+- Tool call approval and denial
+- Reading worker event streams and conversation logs
+- Handing off a live session to a human operator
 
 ## Scripts
 
-| Script | Usage | Description |
-|--------|-------|-------------|
-| `converse.sh` | `<tmux-name> <session-id> <prompt> [timeout=120]` | Send prompt, wait, return response |
-| `launch-worker.sh` | `<tmux-name> <working-dir> [claude-args...]` | Start a worker session |
-| `send-prompt.sh` | `<tmux-name> <prompt-text>` | Send a prompt to a worker |
-| `wait-for-event.sh` | `<session-id> <event-type> [timeout=60] [--after-line N]` | Block until event or timeout |
-| `read-events.sh` | `<session-id> [--last N] [--type T] [--follow]` | Read event stream |
-| `read-turn.sh` | `<session-id> [--full]` | Format last turn as markdown |
-| `stop-worker.sh` | `<tmux-name> <session-id>` | Gracefully stop and clean up |
-| `approve-tool.sh` | `<session-id> <allow\|deny>` | Respond to a pending tool approval |
+All orchestration happens through these scripts in the `scripts/` directory:
 
-## Skill
-
-Install the plugin and the `driving-claude-code-sessions` skill becomes available. It provides full documentation for orchestrating worker sessions, including patterns for fan-out parallelism, pipelines, supervised multi-turn conversations, and human handoff.
+| Script | Description |
+|--------|-------------|
+| `launch-worker.sh` | Start a worker session in tmux |
+| `converse.sh` | Send a prompt, wait for completion, return the response |
+| `send-prompt.sh` | Send a prompt without waiting |
+| `wait-for-event.sh` | Block until a specific lifecycle event appears |
+| `read-events.sh` | Read and filter the event stream |
+| `read-turn.sh` | Format the last conversation turn as markdown |
+| `stop-worker.sh` | Gracefully stop a worker and clean up |
+| `approve-tool.sh` | Approve or deny a pending tool call |
 
 ## License
 
