@@ -1,14 +1,28 @@
 #!/usr/bin/env bash
 # lib/transport.sh — transport abstraction for claude-session-driver
 # Source this file; do not execute directly.
+# Not using set -euo pipefail — this file is sourced; callers control error handling.
+
+# Internal helper: run ssh with shared ControlMaster options.
+_csd_ssh() {
+  local host="$1"; shift
+  ssh -o ControlMaster=auto \
+      -o ControlPath="/tmp/csd-ssh-%r@%h:%p" \
+      -o ControlPersist=60 \
+      "$host" "$@"
+}
 
 # Load target from session .meta file into WORKER_TARGET env var.
 csd_load_target() {
   local session_id="$1"
   local meta_file="/tmp/claude-workers/${session_id}.meta"
+  WORKER_TARGET="${WORKER_TARGET:-local}"
+  export WORKER_TARGET
   if [ -f "$meta_file" ]; then
     WORKER_TARGET=$(jq -r '.target // "local"' "$meta_file")
     export WORKER_TARGET
+  else
+    echo "transport: warning: no .meta file for session $session_id, using local transport" >&2
   fi
 }
 
@@ -19,10 +33,7 @@ transport_exec() {
     local|"") "$@" ;;
     ssh://*)
       local host="${target#ssh://}"
-      ssh -o ControlMaster=auto \
-          -o ControlPath="/tmp/csd-ssh-%r@%h:%p" \
-          -o ControlPersist=60 \
-          "$host" "$@"
+      _csd_ssh "$host" "$@"
       ;;
     docker://*)
       local container="${target#docker://}"
@@ -41,7 +52,7 @@ transport_read() {
   local filepath="$1"
   case "$target" in
     local|"")   cat "$filepath" ;;
-    ssh://*)    ssh "${target#ssh://}" cat "$filepath" ;;
+    ssh://*)    _csd_ssh "${target#ssh://}" cat "$filepath" ;;
     docker://*) docker exec "${target#docker://}" cat "$filepath" ;;
     *)          echo "transport: unknown target: $target" >&2; return 1 ;;
   esac
@@ -53,7 +64,10 @@ transport_tail() {
   local filepath="$1"
   case "$target" in
     local|"")   tail -f "$filepath" ;;
-    ssh://*)    ssh "${target#ssh://}" tail -f "$filepath" ;;
+    ssh://*)
+      local host="${target#ssh://}"
+      ssh -tt -o ControlMaster=auto -o ControlPath="/tmp/csd-ssh-%r@%h:%p" -o ControlPersist=60 \
+          "$host" tail -f "$filepath" ;;
     docker://*) docker exec "${target#docker://}" tail -f "$filepath" ;;
     *)          echo "transport: unknown target: $target" >&2; return 1 ;;
   esac
@@ -69,7 +83,7 @@ transport_write() {
       printf '%s' "$content" > "$filepath"
       ;;
     ssh://*)
-      printf '%s' "$content" | ssh "${target#ssh://}" "cat > $(printf '%q' "$filepath")"
+      printf '%s' "$content" | _csd_ssh "${target#ssh://}" "cat > $(printf '%q' "$filepath")"
       ;;
     docker://*)
       local container="${target#docker://}"

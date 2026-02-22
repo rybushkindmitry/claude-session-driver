@@ -11,7 +11,12 @@ pass() { echo "  PASS: $1"; PASS_COUNT=$((PASS_COUNT + 1)); }
 fail() { echo "  FAIL: $1 - $2"; FAIL_COUNT=$((FAIL_COUNT + 1)); }
 
 TMPDIR_TEST=$(mktemp -d)
-trap 'rm -rf "$TMPDIR_TEST"' EXIT
+
+cleanup() {
+  rm -rf "$TMPDIR_TEST"
+  rm -f /tmp/claude-workers/test-transport-{004,005}.meta
+}
+trap cleanup EXIT
 
 # --- Test 1: transport_exec local runs command directly ---
 echo "Test 1: transport_exec local runs command"
@@ -54,7 +59,6 @@ mkdir -p /tmp/claude-workers
 SESSION_ID="test-transport-004"
 META_FILE="/tmp/claude-workers/${SESSION_ID}.meta"
 echo '{"session_id":"test-transport-004","target":"ssh://user@remotehost","cwd":"/tmp"}' > "$META_FILE"
-trap 'rm -f "$META_FILE"; rm -rf "$TMPDIR_TEST"' EXIT
 (
   source "$TRANSPORT"
   csd_load_target "test-transport-004"
@@ -69,6 +73,14 @@ echo '{"session_id":"test-transport-005","cwd":"/tmp"}' > /tmp/claude-workers/te
   csd_load_target "test-transport-005"
   echo "${WORKER_TARGET:-local}"
 ) | grep -q "local" && pass "csd_load_target defaults to local" || fail "csd_load_target default" "not local"
+
+# --- Test 6: unknown target returns error ---
+echo "Test 6: unknown target returns error"
+(
+  WORKER_TARGET="bogus://x"
+  source "$TRANSPORT"
+  transport_exec echo "should not run"
+) 2>/dev/null && fail "unknown target" "should have failed" || pass "transport_exec unknown target returns error"
 
 # --- Summary ---
 echo ""
