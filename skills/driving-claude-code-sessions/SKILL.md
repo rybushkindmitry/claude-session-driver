@@ -161,7 +161,7 @@ Workers can run on remote SSH hosts or inside Docker containers. Pass `--target`
 
 **SSH worker** — code lives on a remote machine:
 ```bash
-launch-worker.sh --name integration-tests \
+"$SCRIPTS/launch-worker.sh" --name integration-tests \
   --target ssh://deploy@staging.example.com \
   --workdir /opt/app
 ```
@@ -170,17 +170,17 @@ Hooks are automatically synced on first connect via `scp`.
 
 **Docker worker** — isolated environment using an existing container:
 ```bash
-launch-worker.sh --name node18-compat \
+"$SCRIPTS/launch-worker.sh" --name node18-compat \
   --target docker://test-env \
   --workdir /app
 ```
 
 **Ephemeral Docker worker** — spun up and torn down automatically:
 ```bash
-launch-worker.sh --name ephemeral \
+"$SCRIPTS/launch-worker.sh" --name ephemeral \
   --target docker-run://node:18 \
   --workdir /workspace
-stop-worker.sh ephemeral $SESSION_ID   # also removes the container
+"$SCRIPTS/stop-worker.sh" ephemeral $SESSION_ID   # also removes the container
 ```
 
 All orchestration patterns (delegate-and-wait, fan-out, pipeline) work identically with remote workers.

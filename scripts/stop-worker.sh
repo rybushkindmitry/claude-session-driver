@@ -31,9 +31,11 @@ if [ "$CONTAINER_MANAGED" = "true" ]; then
 fi
 
 rm -f "/tmp/claude-workers/${SESSION_ID}.events.jsonl"
-# For remote workers, the events file is on the remote machine
+rm -f "/tmp/claude-workers/${SESSION_ID}.tool-decision"
+# For remote workers, the events and tool-decision files are on the remote machine
 if [ "${WORKER_TARGET:-local}" != "local" ] && [ -n "${WORKER_TARGET:-}" ]; then
   transport_exec rm -f "/tmp/claude-workers/${SESSION_ID}.events.jsonl" 2>/dev/null || true
+  transport_exec rm -f "/tmp/claude-workers/${SESSION_ID}.tool-decision" 2>/dev/null || true
 fi
 rm -f "$META_FILE"
 echo "Worker $TMUX_NAME ($SESSION_ID) stopped and cleaned up"
