@@ -117,6 +117,10 @@ if [ \${#REMOTE_CMD[@]} -gt 0 ] && [ "\${REMOTE_CMD[0]}" = "tmux" ]; then
       ;;
   esac
 fi
+# Handle tail command - run locally since mock claude writes to local filesystem
+if [ \${#REMOTE_CMD[@]} -gt 0 ] && [ "\${REMOTE_CMD[0]}" = "tail" ]; then
+  exec tail "\${REMOTE_CMD[@]:1}"
+fi
 exit 0
 MOCK
 chmod +x "$TMPDIR_TEST/bin/ssh"
