@@ -155,6 +155,36 @@ The worker is running in tmux session 'my-worker'. You can:
 
 Leave the worker running. Do not stop it when handing off.
 
+## Remote Workers
+
+Workers can run on remote SSH hosts or inside Docker containers. Pass `--target` to `launch-worker.sh`:
+
+**SSH worker** — code lives on a remote machine:
+```bash
+launch-worker.sh --name integration-tests \
+  --target ssh://deploy@staging.example.com \
+  --workdir /opt/app
+```
+Prerequisites on the remote host: `tmux`, `jq`, `claude` CLI installed and authenticated.
+Hooks are automatically synced on first connect via `scp`.
+
+**Docker worker** — isolated environment using an existing container:
+```bash
+launch-worker.sh --name node18-compat \
+  --target docker://test-env \
+  --workdir /app
+```
+
+**Ephemeral Docker worker** — spun up and torn down automatically:
+```bash
+launch-worker.sh --name ephemeral \
+  --target docker-run://node:18 \
+  --workdir /workspace
+stop-worker.sh my-worker $SESSION_ID   # also removes the container
+```
+
+All orchestration patterns (delegate-and-wait, fan-out, pipeline) work identically with remote workers.
+
 ## Script Reference
 
 | Script | Usage | Description |
