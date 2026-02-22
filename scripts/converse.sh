@@ -13,6 +13,12 @@ PROMPT_TEXT="${3:?Usage: converse.sh <tmux-name> <session-id> <prompt-text> [tim
 TIMEOUT="${4:-120}"
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+LIB_DIR="$(cd "$SCRIPT_DIR/.." && pwd)/lib"
+# shellcheck source=lib/transport.sh
+source "$LIB_DIR/transport.sh"
+csd_load_target "$SESSION_ID"
+export WORKER_TARGET
+
 EVENT_FILE="/tmp/claude-workers/${SESSION_ID}.events.jsonl"
 META_FILE="/tmp/claude-workers/${SESSION_ID}.meta"
 
@@ -61,7 +67,7 @@ if [ -f "$EVENT_FILE" ]; then
 fi
 
 # Send the prompt
-bash "$SCRIPT_DIR/send-prompt.sh" "$TMUX_NAME" "$PROMPT_TEXT"
+bash "$SCRIPT_DIR/send-prompt.sh" "$TMUX_NAME" "$SESSION_ID" "$PROMPT_TEXT"
 
 # Wait for the worker to finish
 if ! bash "$SCRIPT_DIR/wait-for-event.sh" "$SESSION_ID" stop "$TIMEOUT" --after-line "$AFTER_LINE" > /dev/null; then
