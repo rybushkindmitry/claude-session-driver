@@ -67,17 +67,18 @@ esac
 MOCK
 chmod +x "$TMPDIR_TEST/bin/tmux"
 
-# Mock ssh: logs args, then dispatches tmux subcommands correctly so that
-# transport_exec tmux calls through SSH work as expected:
+# Mock ssh: logs args, then dispatches subcommands so that transport_exec
+# SSH calls work as expected. The remote command arrives as a single quoted
+# string (from transport_exec's printf '%q' quoting + "${args[*]}" join):
 #   tmux has-session  → exit 1 (no session)
 #   tmux new-session  → run claude in background, exit 0
 #   tmux send-keys / kill-session → exit 0
-#   plain command (mkdir etc.) → exit 0
+#   cat /path         → read local file (events file is local in tests)
+#   other commands    → run locally via eval
 cat > "$TMPDIR_TEST/bin/ssh" <<MOCK
 #!/usr/bin/env bash
-# Log all args (skip ssh option flags so the log is readable)
 echo "\$@" >> "$TMPDIR_TEST/ssh.log"
-# Skip ssh options (-o key=val, -tt, etc.) to find host + command
+# Skip SSH option flags to find the host index
 ARGS=("\$@")
 IDX=0
 while [ \$IDX -lt \${#ARGS[@]} ]; do
@@ -87,41 +88,43 @@ while [ \$IDX -lt \${#ARGS[@]} ]; do
     *) break ;;
   esac
 done
-# ARGS[IDX] is the host, ARGS[IDX+1...] is the remote command
-CMD_START=\$((IDX+1))
-REMOTE_CMD=("\${ARGS[@]:\$CMD_START}")
-# Check if remote command is a tmux invocation
-if [ \${#REMOTE_CMD[@]} -gt 0 ] && [ "\${REMOTE_CMD[0]}" = "tmux" ]; then
-  case "\${REMOTE_CMD[1]}" in
-    has-session)
-      exit 1
-      ;;
-    new-session)
-      # Parse tmux new-session args to find the claude command
-      TIDX=2  # skip "tmux new-session"
-      while [ \$TIDX -lt \${#REMOTE_CMD[@]} ]; do
-        case "\${REMOTE_CMD[\$TIDX]}" in
-          -d) TIDX=\$((TIDX+1)) ;;
-          -s|-c|-e|-x|-y) TIDX=\$((TIDX+2)) ;;
-          *) break ;;
-        esac
-      done
-      CLAUDE_CMD=("\${REMOTE_CMD[@]:\$TIDX}")
-      if [ \${#CLAUDE_CMD[@]} -gt 0 ]; then
-        "\${CLAUDE_CMD[@]}" &
-      fi
-      exit 0
-      ;;
-    send-keys|kill-session)
-      exit 0
-      ;;
-  esac
-fi
-# Handle tail command - run locally since mock claude writes to local filesystem
-if [ \${#REMOTE_CMD[@]} -gt 0 ] && [ "\${REMOTE_CMD[0]}" = "tail" ]; then
-  exec tail "\${REMOTE_CMD[@]:1}"
-fi
-exit 0
+# Everything after the host is the remote command. With transport_exec's
+# printf '%q' quoting, this arrives as a single string (real SSH passes
+# args joined with spaces to the remote shell).
+REMOTE="\${ARGS[*]:\$((IDX+1))}"
+# Dispatch based on the command string
+case "\$REMOTE" in
+  "tmux has-session"*)
+    exit 1
+    ;;
+  "tmux new-session"*)
+    # Re-parse the quoted command string to extract the claude invocation
+    eval "RCMD=(\$REMOTE)"
+    TIDX=1  # skip "tmux"
+    while [ \$TIDX -lt \${#RCMD[@]} ]; do
+      case "\${RCMD[\$TIDX]}" in
+        new-session) TIDX=\$((TIDX+1)) ;;
+        -d)          TIDX=\$((TIDX+1)) ;;
+        -s|-c|-e|-x|-y) TIDX=\$((TIDX+2)) ;;
+        *) break ;;
+      esac
+    done
+    CLAUDE_CMD=("\${RCMD[@]:\$TIDX}")
+    if [ \${#CLAUDE_CMD[@]} -gt 0 ]; then
+      "\${CLAUDE_CMD[@]}" &
+    fi
+    exit 0
+    ;;
+  "tmux"*)
+    exit 0
+    ;;
+  *)
+    # For cat, sh -c, mkdir, tail, etc. — run locally
+    # (events file is on local fs in tests, so cat works)
+    eval "\$REMOTE"
+    exit \$?
+    ;;
+esac
 MOCK
 chmod +x "$TMPDIR_TEST/bin/ssh"
 
@@ -158,7 +161,7 @@ rm -f "$TMPDIR_TEST/tmux.log" "$TMPDIR_TEST/ssh.log" "$TMPDIR_TEST/scp.log"
 echo "Test 2: --target ssh://user@buildhost writes target to .meta"
 OUTPUT=$(PATH="$TMPDIR_TEST/bin:$PATH" bash "$LAUNCH" \
   --name test-launch-remote-002 --workdir /tmp \
-  --target ssh://user@buildhost 2>/dev/null)
+  --target ssh://user@buildhost 2>/dev/null) || true
 SESSION_ID=$(echo "$OUTPUT" | jq -r '.session_id' 2>/dev/null || true)
 
 if [ -n "$SESSION_ID" ]; then

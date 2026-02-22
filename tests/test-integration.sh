@@ -157,7 +157,7 @@ fi
 run_test
 echo "Test 5: Sending prompt (file write)..."
 TEST_FILE="/tmp/integration-test-$$.txt"
-bash "$PLUGIN_DIR/scripts/send-prompt.sh" "$TMUX_NAME" "Write the word 'hello' to $TEST_FILE using the Write tool. Do not read it first."
+bash "$PLUGIN_DIR/scripts/send-prompt.sh" "$TMUX_NAME" "$SESSION_ID" "Write the word 'hello' to $TEST_FILE using the Write tool. Do not read it first."
 STOP_EVENT=$(bash "$PLUGIN_DIR/scripts/wait-for-event.sh" "$SESSION_ID" stop 120 2>&1)
 STOP_EXIT=$?
 

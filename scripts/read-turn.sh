@@ -31,12 +31,15 @@ if [ -z "$CWD" ] || [ "$CWD" = "null" ]; then
   exit 1
 fi
 
-if [ -d "$CWD" ]; then
-  CWD=$(cd "$CWD" && pwd -P)
+if [ "${WORKER_TARGET:-local}" = "local" ] || [ -z "${WORKER_TARGET:-}" ]; then
+  if [ -d "$CWD" ]; then
+    CWD=$(cd "$CWD" && pwd -P)
+  fi
 fi
 
+WORKER_HOME=$(jq -r '.worker_home // empty' "$META_FILE" 2>/dev/null || echo "$HOME")
 ENCODED_PATH=$(echo "$CWD" | sed 's|/|-|g')
-LOG_FILE="$HOME/.claude/projects/${ENCODED_PATH}/${SESSION_ID}.jsonl"
+LOG_FILE="$WORKER_HOME/.claude/projects/${ENCODED_PATH}/${SESSION_ID}.jsonl"
 
 if [ "${WORKER_TARGET:-local}" = "local" ] || [ -z "${WORKER_TARGET:-}" ]; then
   [ ! -f "$LOG_FILE" ] && { echo "Error: Session log not found at $LOG_FILE" >&2; exit 1; }

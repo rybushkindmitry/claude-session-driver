@@ -7,7 +7,7 @@
 _csd_ssh() {
   local host="$1"; shift
   ssh -o ControlMaster=auto \
-      -o ControlPath="/tmp/csd-ssh-%r@%h:%p" \
+      -o ControlPath="$HOME/.ssh/csd-%r@%h:%p" \
       -o ControlPersist=60 \
       "$host" "$@"
 }
@@ -33,7 +33,9 @@ transport_exec() {
     local|"") "$@" ;;
     ssh://*)
       local host="${target#ssh://}"
-      _csd_ssh "$host" "$@"
+      local args=()
+      for arg in "$@"; do args+=("$(printf '%q' "$arg")"); done
+      _csd_ssh "$host" "${args[*]}"
       ;;
     docker://*)
       local container="${target#docker://}"
@@ -52,7 +54,7 @@ transport_read() {
   local filepath="$1"
   case "$target" in
     local|"")   cat "$filepath" ;;
-    ssh://*)    _csd_ssh "${target#ssh://}" cat "$filepath" ;;
+    ssh://*)    _csd_ssh "${target#ssh://}" "cat $(printf '%q' "$filepath")" ;;
     docker://*) docker exec "${target#docker://}" cat "$filepath" ;;
     *)          echo "transport: unknown target: $target" >&2; return 1 ;;
   esac
@@ -66,8 +68,10 @@ transport_tail() {
     local|"")   tail -f "$filepath" ;;
     ssh://*)
       local host="${target#ssh://}"
-      ssh -tt -o ControlMaster=auto -o ControlPath="/tmp/csd-ssh-%r@%h:%p" -o ControlPersist=60 \
-          "$host" tail -f "$filepath" ;;
+      ssh -tt -o ControlMaster=auto \
+          -o ControlPath="$HOME/.ssh/csd-%r@%h:%p" \
+          -o ControlPersist=60 \
+          "$host" "tail -f $(printf '%q' "$filepath")" ;;
     docker://*) docker exec "${target#docker://}" tail -f "$filepath" ;;
     *)          echo "transport: unknown target: $target" >&2; return 1 ;;
   esac

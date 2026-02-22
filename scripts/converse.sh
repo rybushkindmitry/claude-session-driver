@@ -30,22 +30,23 @@ if [ -z "$CWD" ] || [ "$CWD" = "null" ]; then
 fi
 
 # Resolve symlinks (e.g. /tmp -> /private/tmp on macOS) to match Claude's encoding
-if [ -d "$CWD" ]; then
-  CWD=$(cd "$CWD" && pwd -P)
+# Only resolve locally — remote workdirs can't be cd'd into from here
+if [ "${WORKER_TARGET:-local}" = "local" ] || [ -z "${WORKER_TARGET:-}" ]; then
+  if [ -d "$CWD" ]; then
+    CWD=$(cd "$CWD" && pwd -P)
+  fi
 fi
 
+WORKER_HOME=$(jq -r '.worker_home // empty' "$META_FILE" 2>/dev/null || echo "$HOME")
 ENCODED_PATH=$(echo "$CWD" | sed 's|/|-|g')
-LOG_FILE="$HOME/.claude/projects/${ENCODED_PATH}/${SESSION_ID}.jsonl"
+LOG_FILE="$WORKER_HOME/.claude/projects/${ENCODED_PATH}/${SESSION_ID}.jsonl"
 
 # Helper: count assistant messages that contain at least one text content block.
 # Uses jq -s to slurp all messages and count properly, avoiding line-counting
 # issues with multi-line text responses.
 count_text_messages() {
-  if [ ! -f "$LOG_FILE" ]; then
-    echo 0
-    return
-  fi
-  grep '"type":"assistant"' "$LOG_FILE" \
+  transport_read "$LOG_FILE" 2>/dev/null \
+    | grep '"type":"assistant"' \
     | jq -s '[.[] | select(.message.content | any(.type == "text"))] | length' 2>/dev/null \
     || echo 0
 }
@@ -54,7 +55,8 @@ count_text_messages() {
 # text content. Handles interleaved thinking/text blocks by filtering to
 # messages with text, taking the last one, and joining all text blocks.
 last_text_response() {
-  grep '"type":"assistant"' "$LOG_FILE" \
+  transport_read "$LOG_FILE" 2>/dev/null \
+    | grep '"type":"assistant"' \
     | jq -rs 'map(select(.message.content | any(.type == "text"))) | last | [.message.content[] | select(.type == "text") | .text] | join("\n")' 2>/dev/null
 }
 
@@ -79,10 +81,6 @@ fi
 # The Stop event and session log write happen concurrently, so the log
 # may not have the latest message yet when the stop event is detected.
 for _ in $(seq 1 20); do
-  if [ ! -f "$LOG_FILE" ]; then
-    sleep 0.1
-    continue
-  fi
   AFTER_COUNT=$(count_text_messages)
   if [ "$AFTER_COUNT" -gt "$BEFORE_COUNT" ]; then
     RESPONSE=$(last_text_response)

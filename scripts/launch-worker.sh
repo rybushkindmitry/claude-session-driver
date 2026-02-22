@@ -28,7 +28,6 @@ done
 [ -z "$TMUX_NAME" ]   && { echo "Error: --name required" >&2; exit 1; }
 [ -z "$WORKING_DIR" ] && { echo "Error: --workdir required" >&2; exit 1; }
 
-WORKING_DIR="$(cd "$WORKING_DIR" && pwd -P)"
 if command -v uuidgen &>/dev/null; then
   SESSION_ID=$(uuidgen | tr '[:upper:]' '[:lower:]')
 elif [ -r /proc/sys/kernel/random/uuid ]; then
@@ -45,12 +44,25 @@ CONTAINER_MANAGED=false
 if [[ "$TARGET" == docker-run://* ]]; then
   IMAGE="${TARGET#docker-run://}"
   CONTAINER_NAME="csd-$SESSION_ID"
-  docker run -d --name "$CONTAINER_NAME" "$IMAGE" sleep infinity
+  docker run -d --name "$CONTAINER_NAME" "$IMAGE" sleep infinity \
+    || { echo "Error: Failed to start Docker container '$CONTAINER_NAME'" >&2; exit 1; }
   EFFECTIVE_TARGET="docker://$CONTAINER_NAME"
   CONTAINER_MANAGED=true
 fi
 
 export WORKER_TARGET="$EFFECTIVE_TARGET"
+
+# Resolve local workdir symlinks only when running locally
+if [ "$EFFECTIVE_TARGET" = "local" ] || [ -z "$EFFECTIVE_TARGET" ]; then
+  WORKING_DIR="$(cd "$WORKING_DIR" && pwd -P)"
+fi
+
+# Get effective home dir for session log resolution
+if [ "$EFFECTIVE_TARGET" = "local" ] || [ -z "$EFFECTIVE_TARGET" ]; then
+  WORKER_HOME="$HOME"
+else
+  WORKER_HOME=$(transport_exec sh -c 'printf "%s" "$HOME"' 2>/dev/null || echo "$HOME")
+fi
 
 # Write .meta
 jq -n \
@@ -60,9 +72,10 @@ jq -n \
   --arg started_at "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" \
   --arg target "$EFFECTIVE_TARGET" \
   --argjson container_managed "$CONTAINER_MANAGED" \
+  --arg worker_home "$WORKER_HOME" \
   '{tmux_name: $tmux_name, session_id: $session_id, cwd: $cwd,
     started_at: $started_at, target: $target,
-    container_managed: $container_managed}' \
+    container_managed: $container_managed, worker_home: $worker_home}' \
   > "/tmp/claude-workers/${SESSION_ID}.meta"
 
 # Sync hooks to remote

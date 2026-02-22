@@ -40,5 +40,5 @@ if [ "$FOLLOW" = true ]; then
 else
   DATA=$(transport_read "$EVENT_FILE")
   [ -n "$TYPE" ] && DATA=$(echo "$DATA" | jq -c "select(.event == \"$TYPE\")")
-  [ -n "$LAST" ] && echo "$DATA" | tail -n "$LAST" || echo "$DATA"
+  if [ -n "$LAST" ]; then echo "$DATA" | tail -n "$LAST"; else echo "$DATA"; fi
 fi

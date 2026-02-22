@@ -43,22 +43,20 @@ if [ "${WORKER_TARGET:-local}" = "local" ] || [ -z "${WORKER_TARGET:-}" ]; then
     sleep 0.5
   done
 else
-  # Remote: stream via transport_tail, filter locally
-  MATCH_FILE=$(mktemp)
-  transport_tail "$EVENT_FILE" | while IFS= read -r line; do
-    [ "$SECONDS" -ge "$DEADLINE" ] && exit 1
-    EVENT=$(echo "$line" | jq -r '.event // empty' 2>/dev/null) || continue
-    if [ "$EVENT" = "$EVENT_TYPE" ]; then
-      echo "$line" > "$MATCH_FILE"
-      exit 0
+  # Remote: poll by reading the events file periodically (handles --after-line, timeout, no orphan processes)
+  LINES_CHECKED=$AFTER_LINE
+  while [ "$SECONDS" -lt "$DEADLINE" ]; do
+    if CONTENT=$(transport_read "$EVENT_FILE" 2>/dev/null); then
+      TOTAL_LINES=$(echo "$CONTENT" | wc -l | tr -d ' ')
+      if [ "$TOTAL_LINES" -gt "$LINES_CHECKED" ]; then
+        MATCH=$(echo "$CONTENT" | tail -n +"$((LINES_CHECKED + 1))" \
+          | jq -c "select(.event == \"$EVENT_TYPE\")" 2>/dev/null | head -1)
+        [ -n "$MATCH" ] && { echo "$MATCH"; exit 0; }
+        LINES_CHECKED=$TOTAL_LINES
+      fi
     fi
-  done || true
-  if [ -s "$MATCH_FILE" ]; then
-    cat "$MATCH_FILE"
-    rm -f "$MATCH_FILE"
-    exit 0
-  fi
-  rm -f "$MATCH_FILE"
+    sleep 1
+  done
 fi
 
 echo "Timeout waiting for event '$EVENT_TYPE' (${TIMEOUT}s)" >&2
